@@ -107,7 +107,11 @@ def cano_seq_smplx(positions, smplx_params_dict, preset_floor_height=None, retur
     else:
         return cano_positions, cano_smplx_params_dict, transf_matrix
 
-def cano_seq_smpl(positions, smplx_params_dict, preset_floor_height=None, return_transf_mat=False, smpl_model=None, device='cpu'):
+def cano_seq_smpl(positions, smpl_params_dict, preset_floor_height=None, return_transf_mat=False, smpl_model=None, device='cpu'):
+    """
+    positions : [T, J, 3]
+    
+    """
     cano_positions = positions.copy()
     r_hip, l_hip, sdr_r, sdr_l = face_joint_indx
 
@@ -117,36 +121,36 @@ def cano_seq_smpl(positions, smplx_params_dict, preset_floor_height=None, return
     else:
         floor_height = cano_positions.min(axis=0).min(axis=0)[2]
     cano_positions[:, :, 2] -= floor_height  # z: up-axis, foot on ground
-    # print(floor_height)
 
     ######################## transl such that XY for frame 0 is at origin
-    root_pos_init = cano_positions[0]  # [22, 3]
+    root_pos_init = cano_positions[0]
     root_pose_init_xy = root_pos_init[0] * np.array([1, 1, 0])
-    cano_positions = cano_positions - root_pose_init_xy
+    cano_positions = cano_positions - root_pose_init_xy         # cano_positions : (T, J, 3)
 
     ######################## transfrom such that frame 0 faces y+ axis
-    joints_frame0 = cano_positions[0] # [N, 3] joints of first frame
-    across1 = joints_frame0[r_hip] - joints_frame0[l_hip]
-    across2 = joints_frame0[sdr_r] - joints_frame0[sdr_l]
+    joints_frame0 = cano_positions[0]
+    across1 = joints_frame0[r_hip] - joints_frame0[l_hip]   # [3]
+    across2 = joints_frame0[sdr_r] - joints_frame0[sdr_l]   # [3]
     x_axis = across1 + across2
     x_axis[-1] = 0
-    x_axis = x_axis / np.linalg.norm(x_axis)
-    z_axis = np.array([0, 0, 1])
+    x_axis = x_axis / np.linalg.norm(x_axis)                # [3]
+    z_axis = np.array([0, 0, 1])                            # 
     y_axis = np.cross(z_axis, x_axis)
     y_axis = y_axis / np.linalg.norm(y_axis)
     transf_rotmat = np.stack([x_axis, y_axis, z_axis], axis=1)  # [3, 3]
-    cano_positions = np.matmul(cano_positions, transf_rotmat)  # [T(/bs), 22, 3]
+    cano_positions = np.matmul(cano_positions, transf_rotmat)   # 
 
     ######################## canonicalization transf matrix for smpl params
     transf_matrix_1 = np.array([[1, 0, 0, -root_pose_init_xy[0]],
                                 [0, 1, 0, -root_pose_init_xy[1]],
-                                [0, 0, 1, -floor_height],
-                                [0, 0, 0, 1]])
+                                [0, 0, 1, -floor_height]        ,
+                                [0, 0, 0, 1]                    ])
+    
     transf_matrix_2 = np.zeros([4, 4])
     transf_matrix_2[0:3, 0:3] = transf_rotmat.T
     transf_matrix_2[-1, -1] = 1
     transf_matrix = np.matmul(transf_matrix_2, transf_matrix_1)
-    cano_smplx_params_dict = update_globalRT_for_smplx(smplx_params_dict, transf_matrix,
+    cano_smplx_params_dict = update_globalRT_for_smpl(smplx_params_dict, transf_matrix,
                                                       delta_T=positions[:, 0]-smplx_params_dict['transl'])
 
     if not return_transf_mat:
