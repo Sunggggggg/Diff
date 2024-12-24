@@ -92,3 +92,27 @@ class ResidualTemporalBlock(nn.Module):
             out = out + self.time_mlp(t)
         out = self.blocks[1](out)
         return out + self.residual_conv(x)
+    
+##################################################################
+######################### Temp. block ############################
+##################################################################
+class TemporalEncoder(nn.Module):
+    def __init__(self, in_dim, hid_dim, out_dim, n_layers=2):
+        super().__init__()
+        self.rnn = nn.LSTM(in_dim, hid_dim, n_layers, bidirectional=False, batch_first=True, dropout=0.3)
+        self.output_proj = nn.Linear(hid_dim, out_dim)
+
+    def forward(self, x):
+        """
+        x : [B, T, dim]
+        """
+        T = x.shape[1]
+        h0 = torch.zeros_like(x[:, :1])
+
+        context_feat_list = []
+        for t in range(T):
+            xout, h0 = self.rnn(x[:, [t]], h0)
+            context_feat_list.append(self.output_proj(xout))
+
+        context_feat = torch.stack(context_feat_list, dim=1)    # [B, T, dim]
+        return context_feat

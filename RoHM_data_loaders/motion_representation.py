@@ -23,22 +23,19 @@ def foot_detect(positions, thres, up_axis='y'):
         up_axis_dim = 1
     elif up_axis == 'z':
         up_axis_dim = 2
-    # velfactor, heightfactor = np.array([thres, thres]), np.array([3.0, 2.0])
     velfactor, heightfactor = np.array([thres, thres]), np.array([0.18, 0.15])
 
     feet_l_x = (positions[1:, fid_l, 0] - positions[:-1, fid_l, 0]) ** 2
     feet_l_y = (positions[1:, fid_l, 1] - positions[:-1, fid_l, 1]) ** 2
     feet_l_z = (positions[1:, fid_l, 2] - positions[:-1, fid_l, 2]) ** 2
-    feet_l_h = positions[:-1,fid_l,up_axis_dim]
+    feet_l_h = positions[:-1, fid_l, up_axis_dim]
     feet_l = (((feet_l_x + feet_l_y + feet_l_z) < velfactor) & (feet_l_h < heightfactor)).astype(float)
-    # feet_l = ((feet_l_x + feet_l_y + feet_l_z) < velfactor).astype(np.float32)
 
     feet_r_x = (positions[1:, fid_r, 0] - positions[:-1, fid_r, 0]) ** 2
     feet_r_y = (positions[1:, fid_r, 1] - positions[:-1, fid_r, 1]) ** 2
     feet_r_z = (positions[1:, fid_r, 2] - positions[:-1, fid_r, 2]) ** 2
-    feet_r_h = positions[:-1,fid_r,up_axis_dim]
+    feet_r_h = positions[:-1, fid_r, up_axis_dim]
     feet_r = (((feet_r_x + feet_r_y + feet_r_z) < velfactor) & (feet_r_h < heightfactor)).astype(float)
-    # feet_r = (((feet_r_x + feet_r_y + feet_r_z) < velfactor)).astype(np.float32)
     return feet_l, feet_r
 
 
@@ -325,6 +322,98 @@ def get_repr_smplx(positions, smplx_params_dict, feet_vel_thre=5e-5):
                  'smplx_body_pose_6d': smplx_body_pose_6d[0:-1].reshape(len(smplx_trans_vel), -1),
                  'local_vel': local_vel.reshape(len(smplx_trans_vel), -1),
                  'smplx_betas': smplx_betas[0:-1],
+                 'foot_contact': np.concatenate([feet_l, feet_r], axis=-1),
+                 }
+    return data_dict
+
+
+def get_repr_smpl(positions, smpl_params_dict, feet_vel_thre=5e-5):
+    '''
+    positions : [T, J, 3]
+    '''
+    global_positions = positions.copy()
+
+    """ Get Foot Contacts """
+    feet_l, feet_r = foot_detect(positions, feet_vel_thre, up_axis='z')  # feet_l/feet_r: [seq_len, 2]
+
+    ##################### joint-based repr #####################
+    '''Get Forward Direction'''
+    l_hip, r_hip, sdr_r, sdr_l = face_joint_indx
+    across1 = positions[:, r_hip] - positions[:, l_hip]
+    across2 = positions[:, sdr_r] - positions[:, sdr_l]
+    across = across1 + across2
+    across = across / np.sqrt((across ** 2).sum(axis=-1))[:, np.newaxis]
+    forward = np.cross(np.array([[0, 0, 1]]), across, axis=-1)
+    forward = forward / np.sqrt((forward ** 2).sum(axis=-1))[..., np.newaxis]
+
+    '''Get Root Rotation and rotation velocity'''
+    target = np.array([[0, 1, 0]]).repeat(len(forward), axis=0)
+    root_rot_quat = qbetween_np(forward, target)
+    ### several frames have nan values
+    if np.isnan(root_rot_quat).sum() > 0:
+        frame_idx = np.where(np.isnan(root_rot_quat) == True)[0][0]
+        root_rot_quat[frame_idx] = root_rot_quat[frame_idx - 1]
+    root_rot_quat[0] = np.array([[1.0, 0.0, 0.0, 0.0]])
+    root_rot_quat_vel = qmul_np(root_rot_quat[1:], qinv_np(root_rot_quat[:-1]))
+
+    '''abs root traj '''
+    root_l_pos = positions[:, 0]  # [seq_len, 3]
+    root_height = positions[:, 0, 2:3] # [seq_len]
+    '''Get Root linear velocity'''
+    root_l_vel = (positions[1:, 0] - positions[:-1, 0]).copy()
+    root_l_vel = qrot_np(root_rot_quat[1:], root_l_vel)
+
+    '''Get Root rotation angle and rot velocity angle'''
+    root_rot_angle = np.arctan2(root_rot_quat[:, 3:4], root_rot_quat[:, 0:1])  # rotation angle, is half of the actual angle...
+    root_rot_angle_vel = np.arctan2(root_rot_quat_vel[:, 3:4], root_rot_quat_vel[:, 0:1])  # rotation angle velocity
+
+    '''local joint positions'''
+    local_positions = positions.copy()  # [seq_len, 22, 3]
+    local_positions[..., 0] -= local_positions[:, 0:1, 0]
+    local_positions[..., 1] -= local_positions[:, 0:1, 1]
+    '''for each frame, local pose face y+'''
+    local_positions = qrot_np(np.repeat(root_rot_quat[:, None], local_positions.shape[1], axis=1), local_positions)
+
+    '''local joint velocity'''
+    local_vel = qrot_np(np.repeat(root_rot_quat[:-1, None], global_positions.shape[1], axis=1),
+                        global_positions[1:] - global_positions[:-1])
+
+    ##################### smplx-based repr #####################
+    '''smpl global_orient matrix'''
+    smpl_rot_aa = smpl_params_dict['global_orient']   # [seq_len, 3]
+    smpl_rot_mat = R.from_rotvec(smpl_rot_aa).as_matrix()  # [seq_len, 3, 3]
+    smpl_rot_6d = smpl_rot_mat[..., :-1].reshape(-1, 6)  # [seq_len, 6]
+
+    '''smpl global_orient velocity'''
+    dRdt = smpl_rot_mat[1:] - smpl_rot_mat[0:-1]  # [seq_len-1, 3, 3]
+    smpl_rot_vel = estimate_angular_velocity_np(smpl_rot_mat[0:-1], dRdt)
+
+    '''smpl transl and velocity'''
+    smpl_trans = smpl_params_dict['transl']  # [seq_len, 3]
+    smpl_trans_vel = (smpl_trans[1:] - smpl_trans[:-1]).copy()
+
+    '''smpl body pose'''
+    smpl_body_pose_aa = smpl_params_dict['body_pose']  # [seq_len, 63]
+    smpl_body_pose_mat = R.from_rotvec(smpl_body_pose_aa.reshape(-1, 3)).as_matrix().reshape(len(smpl_body_pose_aa), -1, 3, 3)  # [seq_len*21, 3, 3]
+    smpl_body_pose_6d = smpl_body_pose_mat[..., :-1].reshape([smpl_body_pose_mat.shape[0], -1, 6])
+
+    '''smpl shape'''
+    smpl_betas = smpl_params_dict['betas']  # [seq_len, 10]
+
+    ################### final full body repr #####################
+    data_dict = {'root_rot_angle': root_rot_angle[0:-1],
+                 'root_rot_angle_vel': root_rot_angle_vel,
+                 'root_l_pos': root_l_pos[0:-1, [0, 1]],
+                 'root_l_vel': root_l_vel[:, [0, 1]],
+                 'root_height': root_height[:-1],
+                 'smpl_rot_6d': smpl_rot_6d[0:-1],
+                 'smpl_rot_vel': smpl_rot_vel,
+                 'smpl_trans': smpl_trans[0:-1],
+                 'smpl_trans_vel': smpl_trans_vel,
+                 'local_positions': local_positions[0:-1].reshape(len(smpl_trans_vel), -1),
+                 'smpl_body_pose_6d': smpl_body_pose_6d[0:-1].reshape(len(smpl_trans_vel), -1),
+                 'local_vel': local_vel.reshape(len(smpl_trans_vel), -1),
+                 'smpl_betas': smpl_betas[0:-1],
                  'foot_contact': np.concatenate([feet_l, feet_r], axis=-1),
                  }
     return data_dict

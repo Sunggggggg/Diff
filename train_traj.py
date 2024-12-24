@@ -20,7 +20,7 @@ from utils.other_utils import get_logger, save_config
 
 arg_formatter = configargparse.ArgumentDefaultsHelpFormatter
 cfg_parser = configargparse.YAMLConfigFileParser
-description = 'RoHM code'
+description = 'code'
 group = configargparse.ArgParser(formatter_class=arg_formatter, config_file_parser_class=cfg_parser, 
                                  description=description, prog='')
 group.add_argument("--expname", type=str)

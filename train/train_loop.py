@@ -17,6 +17,8 @@ class TrainNetwork:
                 for k in batch.keys():
                     batch[k] = batch[k].to(self.device)
 
+
+
                 ### Train loop
                 train_losses = self.run_step(batch)
 

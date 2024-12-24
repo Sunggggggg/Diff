@@ -7,6 +7,28 @@ import torch
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+REPR_LIST = ['root_rot_angle', 'root_rot_angle_vel', 'root_l_pos', 'root_l_vel', 'root_height', # joint-based traj
+             'smplx_rot_6d', 'smplx_rot_vel', 'smplx_trans', 'smplx_trans_vel',  # smplx-based traj
+             'local_positions', 'local_vel',  # joint-based local pose
+             'smplx_body_pose_6d',  # smplx-based local pose
+             'smplx_betas',  # smplx body shape
+             'foot_contact', ]
+
+REPR_DIM_DICT = {'root_rot_angle': 1,
+                 'root_rot_angle_vel': 1,
+                 'root_l_pos': 2,
+                 'root_l_vel': 2,
+                 'root_height': 1,
+                 'smplx_rot_6d': 6,
+                 'smplx_rot_vel': 3,
+                 'smplx_trans': 3,
+                 'smplx_trans_vel': 3,
+                 'local_positions': 22 * 3,
+                 'local_vel': 22 * 3,
+                 'smplx_body_pose_6d': 21 * 6,
+                 'smplx_betas': 10,
+                 'foot_contact': 4, }
+
 def update_globalRT_for_smpl(body_param_dict, trans_to_target_origin, smpl_model=None, device=None, delta_T=None):
     '''
     input:
@@ -52,6 +74,21 @@ def update_globalRT_for_smpl(body_param_dict, trans_to_target_origin, smpl_model
     body_params_dict_new['global_orient'] = body_R_new.reshape(-1,3)
     body_params_dict_new['transl'] = (body_T_new - delta_T).reshape(-1,3)
     return body_params_dict_new
+
+def estimate_angular_velocity_np(rot_seq, dRdt):
+    # rot_seq: [T, 3, 3]
+    # dRdt: [T, 3, 3]
+    R = rot_seq
+    RT = np.transpose(R, (0, -1, -2))
+    # compute skew-symmetric angular velocity tensor
+    w_mat = np.matmul(dRdt, RT)
+    # pull out angular velocity vector
+    # average symmetric entries
+    w_x = (-w_mat[..., 1, 2] + w_mat[..., 2, 1]) / 2.0
+    w_y = (w_mat[..., 0, 2] - w_mat[..., 2, 0]) / 2.0
+    w_z = (-w_mat[..., 0, 1] + w_mat[..., 1, 0]) / 2.0
+    w = np.stack([w_x, w_y, w_z], axis=-1)  # [B, T, ..., 3]
+    return w
 
 def get_logger(logdir):
     logger = logging.getLogger('emotion')
