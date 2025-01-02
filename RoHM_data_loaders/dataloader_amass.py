@@ -1,3 +1,7 @@
+import os
+import numpy as np
+import torch
+
 from collections import defaultdict
 from torch.utils import data
 from tqdm import tqdm
@@ -5,17 +9,15 @@ from scipy.spatial.transform import Rotation as R
 
 import joblib
 import smplx
-from data_loaders.motion_representation import *
 import pickle as pkl
 from utils.other_utils import REPR_LIST, REPR_DIM_DICT
-
 from configs import constants as _C
+from .motion_representation import *
 
 def make_list_dict(_dict, keys) :
     for key in keys:
         _dict[key] = []
     return _dict
-
 
 class DataloaderAMASS(data.Dataset):
     def __init__(self,

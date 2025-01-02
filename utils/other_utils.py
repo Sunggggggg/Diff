@@ -7,12 +7,15 @@ import torch
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-REPR_LIST = ['root_rot_angle', 'root_rot_angle_vel', 'root_l_pos', 'root_l_vel', 'root_height', # joint-based traj
-             'smplx_rot_6d', 'smplx_rot_vel', 'smplx_trans', 'smplx_trans_vel',  # smplx-based traj
-             'local_positions', 'local_vel',  # joint-based local pose
-             'smplx_body_pose_6d',  # smplx-based local pose
-             'smplx_betas',  # smplx body shape
-             'foot_contact', ]
+REPR_LIST = ['kp3d',        # coco joint    (World cood)
+             'kp3d_vel',
+             'root_pose',   # orientation   (AA type)
+             'body_pose',   # body          (AA type)
+             ''
+             ]
+
+
+
 
 REPR_DIM_DICT = {'root_rot_angle': 1,
                  'root_rot_angle_vel': 1,

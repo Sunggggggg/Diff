@@ -2,7 +2,7 @@
 # Part of this code is based on https://github.com/EricGuo5513/HumanML3D
 
 import math
-from data_loaders.common import *
+from .common import *
 from utils.other_utils import *
 
 # Lower legs
@@ -96,7 +96,7 @@ def cano_seq_smplx(positions, smplx_params_dict, preset_floor_height=None, retur
     transf_matrix_2[0:3, 0:3] = transf_rotmat.T
     transf_matrix_2[-1, -1] = 1
     transf_matrix = np.matmul(transf_matrix_2, transf_matrix_1)
-    cano_smplx_params_dict = update_globalRT_for_smplx(smplx_params_dict, transf_matrix,
+    cano_smplx_params_dict = update_globalRT_for_smpl(smplx_params_dict, transf_matrix,
                                                       delta_T=positions[:, 0]-smplx_params_dict['transl'])
 
     if not return_transf_mat:
@@ -147,13 +147,13 @@ def cano_seq_smpl(positions, smpl_params_dict, preset_floor_height=None, return_
     transf_matrix_2[0:3, 0:3] = transf_rotmat.T
     transf_matrix_2[-1, -1] = 1
     transf_matrix = np.matmul(transf_matrix_2, transf_matrix_1)
-    cano_smplx_params_dict = update_globalRT_for_smpl(smplx_params_dict, transf_matrix,
-                                                      delta_T=positions[:, 0]-smplx_params_dict['transl'])
+    cano_smpl_params_dict = update_globalRT_for_smpl(smpl_params_dict, transf_matrix,
+                                                      delta_T=positions[:, 0]-smpl_params_dict['transl'])
 
     if not return_transf_mat:
-        return cano_positions, cano_smplx_params_dict
+        return cano_positions, cano_smpl_params_dict
     else:
-        return cano_positions, cano_smplx_params_dict, transf_matrix
+        return cano_positions, cano_smpl_params_dict, transf_matrix
 
 def cano_seq_smplx_egobody(positions, smplx_params_dict, preset_floor_height=None, return_transf_mat=False, smpl_model=None, device='cpu'):
     '''
@@ -219,7 +219,7 @@ def cano_seq_smplx_egobody(positions, smplx_params_dict, preset_floor_height=Non
     transf_matrix_3 = np.identity(4)
     transf_matrix_3[0:3, 0:3] = add_trans
     transf_matrix = np.matmul(transf_matrix_3, np.matmul(transf_matrix_2, transf_matrix_1))
-    cano_smplx_params_dict = update_globalRT_for_smplx(smplx_params_dict, transf_matrix,
+    cano_smplx_params_dict = update_globalRT_for_smpl(smplx_params_dict, transf_matrix,
                                                       # smplx_model=smpl_model, device=device,
                                                        delta_T=positions[:, 0]-smplx_params_dict['transl'],)
 
